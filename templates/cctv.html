@@ -1,0 +1,810 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  /* Raqib console — same visual language as the Ru'ya glasses (asphalt + tactile yellow,
+     Atkinson Hyperlegible). Yellow marks one thing here: the timeline of the recording.
+     List colours: green allowed, red watch, black banned, amber unknown. */
+  @font-face { font-family: "Atkinson Hyperlegible"; src: url("/static/fonts/AtkinsonHyperlegible-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "Atkinson Hyperlegible"; src: url("/static/fonts/AtkinsonHyperlegible-Bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "Plex Arabic"; src: url("/static/fonts/IBMPlexSansArabic-SemiBold.ttf"); font-weight: 600 700; }
+  :root {
+    --asphalt: #24272c; --asphalt-2: #2d3137; --asphalt-3: #363b42; --line: #3d424a;
+    --paper: #f3f3ee; --muted: #a9aeb5; --tactile: #f2c200; --ink: #17181a;
+    --work: #a9c1ff; --phone: #e58cff; --idle: #5a6069;
+    --green: #46d483; --red: #ff6a3d; --black: #0f1012; --unknown: #ffcf70;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--asphalt); color: var(--paper); font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+         font-size: 16px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--tactile); outline-offset: 2px; }
+  .hidden { display: none !important; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 32px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand svg { width: 34px; height: 44px; flex: none; }
+  .brand h1 { font-size: 20px; margin: 0; }
+  .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+  .back { color: var(--paper); text-decoration: none; background: var(--asphalt-2); padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+  .back:hover { background: var(--line); }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; padding: 4px 32px 40px; max-width: 1500px; margin: 0 auto; align-items: start; }
+
+  /* source */
+  .source { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .segmented { display: inline-flex; background: var(--asphalt-2); border-radius: 8px; padding: 3px; }
+  .segmented button { border: 0; background: transparent; padding: 7px 14px; border-radius: 6px; color: var(--muted); font-weight: 700; }
+  .segmented button[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
+  .field { flex: 1 1 280px; display: flex; gap: 10px; min-width: 0; }
+  .file-label { flex: 1; display: flex; align-items: center; gap: 10px; background: var(--asphalt-2); border: 1px dashed var(--line); border-radius: 8px; padding: 9px 14px; color: var(--muted); cursor: pointer; min-width: 0; }
+  .file-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-label.has-file { color: var(--paper); border-style: solid; }
+  .file-label.drag { border-color: var(--tactile); color: var(--paper); }
+  input[type=file] { display: none; }
+  input[type=text] { flex: 1; min-width: 0; background: var(--asphalt-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; }
+  .primary { background: var(--paper); color: var(--ink); border: 0; border-radius: 8px; padding: 9px 18px; font-weight: 700; }
+  .primary:disabled { opacity: .45; cursor: default; }
+  .quiet { background: var(--asphalt-2); border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 700; }
+  .hint { color: var(--muted); font-size: 13px; margin: -4px 0 14px; }
+  .hint code { color: var(--paper); font-size: 12px; }
+
+  /* monitor */
+  .monitor { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; display: grid; place-items: center; }
+  .monitor img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .empty { text-align: center; color: var(--muted); padding: 24px; }
+  .empty strong { display: block; color: var(--paper); font-size: 18px; margin-bottom: 4px; }
+  .live-tag { position: absolute; top: 12px; left: 12px; background: rgba(15,16,18,.8); padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+  .live-tag i { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+
+  /* black-list alarm: takes the whole screen until someone acknowledges it */
+  .alarm { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(15,16,18,.92); }
+  .alarm::before { content: ""; position: absolute; inset: 0; border: 14px solid var(--red); pointer-events: none; }
+  @media (prefers-reduced-motion: no-preference) { .alarm::before { animation: pulse 0.9s steps(2, jump-none) infinite; } }
+  @keyframes pulse { 50% { border-color: var(--black); } }
+  .alarm-card { position: relative; width: min(560px, calc(100vw - 48px)); text-align: center; }
+  .alarm-card .kind { display: inline-block; background: var(--red); color: var(--ink); font-weight: 700; padding: 6px 14px; border-radius: 6px; font-size: 15px; }
+  .alarm-card img { display: block; width: 220px; height: 220px; object-fit: cover; border-radius: 12px; margin: 22px auto 18px; border: 3px solid var(--paper); background: var(--asphalt-3); }
+  .alarm-card h2 { font-size: 40px; line-height: 1.1; margin: 0 0 6px; }
+  .alarm-card p { color: var(--muted); margin: 0 0 22px; font-size: 17px; }
+  .alarm-card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .alarm-card input { background: var(--asphalt-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; width: 200px; }
+  .alarm-card .ack { background: var(--red); color: var(--ink); border: 0; border-radius: 8px; padding: 12px 22px; font-weight: 700; font-size: 17px; }
+  .alarm-card .more { color: var(--muted); font-size: 14px; margin-top: 14px; }
+  .log .acked { color: var(--green); font-size: 13px; }
+
+  /* timeline: the one yellow element */
+  .timeline { position: relative; height: 34px; margin-top: 12px; }
+  .timeline .track { position: absolute; left: 0; right: 0; top: 15px; height: 4px; background: var(--asphalt-3); border-radius: 2px; }
+  .timeline .done { position: absolute; left: 0; top: 15px; height: 4px; background: var(--tactile); border-radius: 2px; width: 0; transition: width .3s linear; }
+  .timeline .tick { position: absolute; top: 6px; width: 4px; height: 22px; border-radius: 2px; transform: translateX(-2px); box-shadow: 0 0 0 2px var(--asphalt); }
+  .status { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .status b { color: var(--paper); }
+
+  .alert { display: flex; gap: 14px; align-items: center; background: var(--red); color: var(--ink); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; font-weight: 700; }
+  .alert img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
+  .alert.banned { background: var(--paper); box-shadow: inset 6px 0 0 var(--black); }
+  .alert button { margin-left: auto; background: rgba(0,0,0,.15); border: 0; border-radius: 6px; padding: 6px 10px; font-weight: 700; }
+  @media (prefers-reduced-motion: no-preference) { .alert.enter { animation: drop .35s ease-out; } }
+  @keyframes drop { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working time */
+  .work { margin-top: 30px; }
+  .work-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .work-head h2 { font-size: 17px; margin: 0; }
+  .work-head a { color: var(--paper); font-size: 14px; }
+  .work-key { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .work-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .work-empty { color: var(--muted); border-top: 1px solid var(--line); padding: 12px 0; }
+  .worker { border-top: 1px solid var(--line); padding: 14px 0; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 6px 20px; align-items: center; }
+  .worker .nm { font-weight: 700; }
+  .worker .now { font-size: 13px; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .worker .now i { width: 8px; height: 8px; border-radius: 50%; }
+  .bar { position: relative; height: 14px; background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255,255,255,.05) 4px 8px); border-radius: 3px; overflow: hidden; }
+  .bar span { position: absolute; top: 0; bottom: 0; }
+  .totals { grid-column: 2; display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+  .totals b { color: var(--paper); font-weight: 700; }
+  .breaks { grid-column: 2; font-size: 13px; color: var(--muted); }
+  @media (max-width: 640px) { .worker { grid-template-columns: 1fr; } .totals, .breaks { grid-column: 1; } }
+
+  /* visitors + money */
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 28px; margin-top: 30px; }
+  .facts h2 { font-size: 17px; margin: 0 0 10px; }
+  .agebar { display: grid; grid-template-columns: 56px 1fr 28px; gap: 10px; align-items: center; font-size: 14px; margin: 5px 0; }
+  .agebar .b { height: 10px; border-radius: 2px; background: var(--paper); }
+  .agebar .n { color: var(--muted); text-align: right; }
+  .split { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--asphalt-3); margin: 6px 0 8px; }
+  .split span { display: block; }
+  .split-key { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+  .split-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+  .muted-note { color: var(--muted); font-size: 14px; }
+  .cash-now { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .cash-now small { font-size: 15px; color: var(--muted); font-weight: 400; }
+  .cash-log { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14px; }
+  .cash-log li { padding: 8px 0; border-top: 1px solid var(--line); }
+  .cash-log b { display: block; }
+  .cash-log span { color: var(--muted); font-size: 13px; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; cursor: pointer; user-select: none; }
+  .toggle input { width: 16px; height: 16px; accent-color: var(--paper); }
+  .worker .mood { grid-column: 2; font-size: 13px; color: var(--muted); }
+
+  /* Egyptian plate badge: white plate, light-blue band with مصر / EGYPT, number left, letters right */
+  .plate { display: inline-flex; flex-direction: column; background: #fbfbf7; color: #111; border-radius: 4px; border: 1.5px solid #111;
+           font-family: "Plex Arabic", "Segoe UI", sans-serif; line-height: 1; overflow: hidden; vertical-align: middle; }
+  .plate .band { background: #8fc3ea; font-size: 9px; font-weight: 700; display: flex; justify-content: space-between; padding: 2px 6px; gap: 10px; }
+  .plate .chars { display: flex; font-size: 17px; font-weight: 700; padding: 4px 0 5px; }
+  .plate .chars span { padding: 0 8px; white-space: nowrap; }
+  .plate .chars span + span { border-left: 1.5px solid #111; }
+  .plate.big .chars { font-size: 26px; } .plate.big .band { font-size: 12px; }
+  .tabs { display: inline-flex; background: var(--asphalt-2); border-radius: 8px; padding: 3px; margin-bottom: 8px; }
+  .tabs button { border: 0; background: transparent; padding: 5px 12px; border-radius: 6px; color: var(--muted); font-weight: 700; font-size: 14px; }
+  .tabs button[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
+  .plate-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 10px; }
+  .plate-form input, .plate-form select { min-width: 0; background: var(--asphalt-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+  .plate-form button { background: var(--paper); color: var(--ink); border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 700; }
+  .plate-form .msg { grid-column: 1 / -1; font-size: 13px; color: var(--red); }
+  .people .x { background: transparent; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; }
+  .people .x:hover { color: var(--red); }
+  .people .owner { color: var(--muted); font-size: 13px; display: block; margin-top: 3px; }
+  .vplate { margin-top: 5px; }
+
+  /* side */
+  aside h2 { font-size: 17px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+  aside h2 small { color: var(--muted); font-weight: 400; font-size: 14px; }
+  .log { list-style: none; margin: 0 0 30px; padding: 0; max-height: 44vh; overflow: auto; border-top: 1px solid var(--line); }
+  .log li { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+  .log img, .log .noimg { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; background: var(--asphalt-3); }
+  .log .who { font-weight: 700; }
+  .log .when { color: var(--muted); font-size: 13px; }
+  .log .empty-row { display: block; color: var(--muted); padding: 14px 2px; border: 0; }
+  .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; color: var(--ink); }
+  .chip.green { background: var(--green); } .chip.red { background: var(--red); }
+  .chip.black { background: var(--black); color: var(--paper); box-shadow: inset 0 0 0 1px var(--muted); }
+  .chip.unknown { background: var(--unknown); }
+  .log .add { background: var(--asphalt-3); border: 0; border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 700; margin-top: 6px; }
+  .log .add:hover { background: var(--line); }
+  .add-form { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 4px 0 2px; }
+  .add-form input { min-width: 0; background: var(--asphalt-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+  .add-form select { background: var(--asphalt-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; }
+  .add-form button { background: var(--paper); color: var(--ink); border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 700; }
+  .add-form .msg { grid-column: 1 / -1; font-size: 13px; color: var(--red); }
+  .people { list-style: none; margin: 0; padding: 0; }
+  .people li { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); gap: 10px; }
+  .people select { background: var(--asphalt-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  .people .note { color: var(--muted); font-size: 14px; padding: 8px 0; display: block; border: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  .error { color: var(--red); font-weight: 700; margin: 8px 0 0; }
+
+  @media (max-width: 980px) {
+    main { grid-template-columns: minmax(0, 1fr); padding: 4px 16px 32px; }
+    header { padding: 14px 16px; }
+    .brand p { display: none; }
+  }
+</style>
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 34 44" aria-hidden="true">
+      <rect width="34" height="44" rx="8" fill="#f2c200"/>
+      <circle cx="11" cy="11" r="4.2" fill="#17181a"/><circle cx="23" cy="11" r="4.2" fill="#17181a"/>
+      <circle cx="11" cy="22" r="4.2" fill="#17181a"/><circle cx="23" cy="22" r="4.2" fill="#17181a"/>
+      <circle cx="11" cy="33" r="2" fill="#17181a" opacity=".25"/><circle cx="23" cy="33" r="2" fill="#17181a" opacity=".25"/>
+    </svg>
+    <div>
+      <h1>Raqib <span lang="ar" style="font-family:'Plex Arabic',sans-serif;font-weight:600">رقيب</span></h1>
+      <p>Who came in, when, and whether they are allowed</p>
+    </div>
+  </div>
+</header>
+
+<div class="alarm hidden" id="alarm" role="alertdialog" aria-modal="true" aria-labelledby="alarm-name">
+  <div class="alarm-card">
+    <span class="kind" id="alarm-kind">Black-listed person detected</span>
+    <img id="alarm-photo" alt="">
+    <div id="alarm-plate" style="margin:-4px 0 14px"></div>
+    <h2 id="alarm-name"></h2>
+    <p id="alarm-where"></p>
+    <form class="row" id="alarm-form">
+      <input id="alarm-by" placeholder="Your name (optional)" aria-label="Acknowledged by" autocomplete="off">
+      <button class="ack" type="submit">Acknowledge</button>
+    </form>
+    <div class="more" id="alarm-more"></div>
+  </div>
+</div>
+
+<main>
+  <section aria-label="Video">
+    <div id="alert" class="alert hidden" role="alert"></div>
+
+    <form class="source" id="source-form">
+      <div class="segmented" role="group" aria-label="Source">
+        <button type="button" data-src="file" aria-pressed="true">Recording</button>
+        <button type="button" data-src="url" aria-pressed="false">Live camera</button>
+      </div>
+      <div class="field" id="file-field">
+        <label class="file-label" id="file-label" for="file">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-5 5m5-5 5 5M4 20h16"/></svg>
+          <span id="file-name">Choose or drop a video (MP4, AVI, MKV, DVR export)</span>
+        </label>
+        <input type="file" id="file" accept="video/*,.dav,.ts,.asf,.mkv">
+      </div>
+      <div class="field hidden" id="url-field">
+        <input type="text" id="url" placeholder="rtsp://user:password@192.168.1.64:554/Streaming/Channels/101" autocomplete="off" spellcheck="false" aria-label="Camera address">
+      </div>
+      <button class="primary" id="start" type="submit" disabled>Analyse</button>
+      <button class="quiet hidden" id="stop" type="button">Stop</button>
+      <label class="toggle" title="Also find Egyptian banknotes and add them up (cashier or counter cameras)"><input type="checkbox" id="money"> Count money</label>
+    </form>
+    <p class="hint hidden" id="url-hint">Hikvision: <code>…:554/Streaming/Channels/101</code> · Dahua: <code>…:554/cam/realmonitor?channel=1&amp;subtype=0</code> · laptop webcam: <code>0</code></p>
+
+    <div class="monitor" id="monitor">
+      <div class="empty" id="empty"><strong>No video yet</strong>Pick a recording or connect a camera. People are named only if they were added under Lists → People.</div>
+      <img id="screen" class="hidden" alt="Analysed video with boxes around people">
+      <span class="live-tag hidden" id="live-tag"><i></i>LIVE</span>
+    </div>
+    <div class="timeline" id="timeline" aria-hidden="true"><div class="track"></div><div class="done" id="done"></div></div>
+    <div class="status">
+      <span id="state">Ready</span>
+      <span><b id="n-now">0</b> in view now · <b id="n-peak">0</b> at most · <b id="n-people">0</b> people in total · <b id="n-vehicles">0</b> vehicles · <b id="n-frames">0</b> frames</span>
+      <span><a id="logcsv" class="hidden" style="color:var(--paper)" href="#">Download log (Excel)</a>
+      <a id="download" class="hidden" style="color:var(--paper);margin-left:14px" href="#">Download analysed video</a></span>
+    </div>
+    <p class="error hidden" id="error"></p>
+
+    <div class="work" aria-live="off">
+      <div class="work-head"><h2>Working time</h2><a id="report" class="hidden" href="#">Download report (Excel)</a></div>
+      <div class="work-key">
+        <span><i style="background:var(--work)"></i>At computer</span>
+        <span><i style="background:var(--phone)"></i>On phone</span>
+        <span><i style="background:var(--idle)"></i>In view, not at computer</span>
+        <span><i style="background:repeating-linear-gradient(135deg,transparent 0 2px,rgba(255,255,255,.25) 2px 4px)"></i>Not seen / break</span>
+      </div>
+      <div id="workers"><div class="work-empty">Each recognised person gets a timeline here: time at the computer, on the phone, and breaks (out of view for more than a minute).</div></div>
+    </div>
+
+    <div class="facts">
+      <div>
+        <h2>Visitors by age group</h2>
+        <div id="ages"><div class="muted-note">Estimated from faces that are large enough. Approximate.</div></div>
+      </div>
+      <div>
+        <h2>Mood</h2>
+        <div id="sentiment"><div class="muted-note">Positive, calm or negative, from facial expressions.</div></div>
+      </div>
+      <div id="money-box" class="hidden">
+        <h2>Cash on camera</h2>
+        <div class="cash-now"><span id="cash-now">0</span> <small>EGP now · most <span id="cash-max">0</span></small></div>
+        <ul class="cash-log" id="cash-log"></ul>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <h2>Seen <small id="seen-count">0 people</small></h2>
+    <datalist id="known-names"></datalist>
+    <ul class="log" id="log"><li class="empty-row">Each person appears here once, when the AI is sure who they are.</li></ul>
+
+    <h2>Vehicles <small id="veh-count">0</small></h2>
+    <ul class="log" id="vlog"><li class="empty-row">Cars, trucks, buses, motorcycles and bicycles appear here with their colour.</li></ul>
+
+    <h2>Lists</h2>
+    <div class="tabs" role="group" aria-label="List type">
+      <button type="button" data-tab="people" aria-pressed="true">People</button>
+      <button type="button" data-tab="cars" aria-pressed="false">Cars</button>
+    </div>
+    <div id="people-tab">
+      <form class="plate-form" id="person-form">
+        <input name="name" placeholder="Name" required aria-label="Name">
+        <select name="list" aria-label="List"><option value="green">Green · allowed</option><option value="red">Red · watch</option><option value="black">Black · banned</option></select>
+        <label class="file-label" style="grid-column:1/-1;padding:7px 10px" id="photo-label">
+          <span id="photo-name">Choose 1–5 clear photos of the face</span>
+          <input type="file" name="photos" accept="image/*" multiple id="photos">
+        </label>
+        <button type="submit" style="grid-column:1/-1">Add person</button>
+        <span class="msg" role="status"></span>
+      </form>
+      <ul class="people" id="people"><li class="note">Loading…</li></ul>
+    </div>
+    <div id="cars" class="hidden">
+      <form class="plate-form" id="plate-form">
+        <input name="plate" placeholder="Plate, e.g. س ط ن 7126" required aria-label="Plate" dir="auto">
+        <input name="owner" placeholder="Owner (optional)" aria-label="Owner">
+        <select name="list" aria-label="List"><option value="green">Green · allowed</option><option value="red">Red · watch</option><option value="black">Black · banned</option></select>
+        <button type="submit">Add car</button>
+        <span class="msg" role="status"></span>
+      </form>
+      <ul class="people" id="plates"></ul>
+    </div>
+    <div class="legend">
+      <span class="chip green">green · allowed</span><span class="chip red">red · watch</span>
+      <span class="chip black">black · banned</span><span class="chip unknown">unknown</span>
+    </div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let mode = "file", job = null, seen = 0, timer = null, duration = 0, beepCtx = null;
+
+  // ---- source switch ----
+  document.querySelectorAll("[data-src]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.src;
+    document.querySelectorAll("[data-src]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    $("file-field").classList.toggle("hidden", mode !== "file");
+    $("url-field").classList.toggle("hidden", mode !== "url");
+    $("url-hint").classList.toggle("hidden", mode !== "url");
+    refreshStart();
+    if (mode === "url") $("url").focus();
+  }));
+  const refreshStart = () => { $("start").disabled = mode === "file" ? !$("file").files.length : !$("url").value.trim(); };
+  $("url").addEventListener("input", refreshStart);
+  $("file").addEventListener("change", () => {
+    const f = $("file").files[0];
+    $("file-name").textContent = f ? `${f.name} · ${(f.size / 1048576).toFixed(1)} MB` : "Choose or drop a video";
+    $("file-label").classList.toggle("has-file", !!f);
+    refreshStart();
+    if (f) readDuration(f);
+  });
+  const label = $("file-label");
+  ["dragenter", "dragover"].forEach((e) => label.addEventListener(e, (ev) => { ev.preventDefault(); label.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach((e) => label.addEventListener(e, () => label.classList.remove("drag")));
+  label.addEventListener("drop", (ev) => { ev.preventDefault(); if (ev.dataTransfer.files.length) { $("file").files = ev.dataTransfer.files; $("file").dispatchEvent(new Event("change")); } });
+
+  function readDuration(file) {      // to place timeline ticks
+    duration = 0;
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { duration = isFinite(v.duration) ? v.duration : 0; URL.revokeObjectURL(v.src); };
+    v.src = URL.createObjectURL(file);
+  }
+
+  // ---- start / stop ----
+  let currentTitle = "";
+  $("source-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try { audio(); } catch (err) {}                       // browsers allow sound only after a click
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (err) {}
+    currentTitle = mode === "file" ? ($("file").files[0]?.name || "") : ($("url").value.split("@").pop());
+    const body = new FormData();
+    if (mode === "file") body.append("video", $("file").files[0]); else body.append("url", $("url").value.trim());
+    if ($("money").checked) body.append("money", "1");
+    $("money-box").classList.toggle("hidden", !$("money").checked);
+    $("cash-log").innerHTML = ""; $("cash-now").textContent = "0"; $("cash-max").textContent = "0";
+    resetView();
+    setState(mode === "file" ? "Uploading…" : "Connecting to the camera…");
+    $("start").disabled = true;
+    try {
+      const r = await fetch("/cctv/start", { method: "POST", body });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Could not start");
+      job = data.id;
+      $("screen").src = `/cctv/stream/${job}?t=${Date.now()}`;
+      $("screen").classList.remove("hidden");
+      $("empty").classList.add("hidden");
+      $("live-tag").classList.toggle("hidden", mode !== "url");
+      $("stop").classList.remove("hidden");
+      poll();
+    } catch (e) { showError(e.message); setState("Ready"); refreshStart(); }
+  });
+  $("stop").addEventListener("click", async () => { if (job) await fetch(`/cctv/stop/${job}`, { method: "POST" }); });
+
+  function resetView() {
+    clearTimeout(timer); seen = 0;
+    $("log").innerHTML = '<li class="empty-row">Watching… people appear here once they are identified.</li>';
+    $("seen-count").textContent = "0 people";
+    $("timeline").querySelectorAll(".tick").forEach((t) => t.remove());
+    $("done").style.width = "0"; $("error").classList.add("hidden");
+    $("workers").innerHTML = '<div class="work-empty">Waiting for a recognised person…</div>'; $("report").classList.add("hidden");
+    cashShown = 0;
+    $("vlog").innerHTML = '<li class="empty-row">Watching for vehicles…</li>'; $("veh-count").textContent = "0";
+    vehicleAlerted.clear(); $("download").classList.add("hidden");
+    $("alert").classList.add("hidden");
+  }
+  const setState = (t) => $("state").textContent = t;
+  const showError = (t) => { $("error").textContent = t; $("error").classList.remove("hidden"); };
+
+  // ---- polling ----
+  async function poll() {
+    if (!job) return;
+    try {
+      const r = await fetch(`/cctv/status/${job}?since=${seen}`);
+      const d = await r.json();
+      d.events.forEach(addEvent);
+      seen += d.events.length;
+      $("n-now").textContent = d.now; $("n-peak").textContent = d.peak;
+      renderFacts(d.demographics); renderMoney(d.money); renderVehicles(d.vehicle_log);
+      $("n-people").textContent = d.people; $("n-vehicles").textContent = d.vehicles; $("n-frames").textContent = d.frames;
+      if (mode === "file") $("done").style.width = `${Math.round(d.progress * 100)}%`;
+      const words = { starting: "Starting…", running: mode === "file" ? `Analysing · ${Math.round(d.progress * 100)}%` : "Watching live", done: "Finished", stopped: "Stopped", error: "Stopped with an error" };
+      setState(words[d.state] || d.state);
+      if (d.error) showError(d.error);
+      renderWork(d.activity);
+      $("report").href = `/cctv/report/${job}.csv`; $("report").classList.remove("hidden");
+      $("logcsv").href = `/cctv/log/${job}.csv`; $("logcsv").classList.remove("hidden");
+      if (d.download) { $("download").href = d.download; $("download").classList.remove("hidden"); }
+      if (d.state === "error" && !d.frames) {      // nothing was shown: put the message back on the screen
+        $("screen").classList.add("hidden"); $("empty").classList.remove("hidden");
+        $("empty").innerHTML = "<strong>No picture</strong>"; $("empty").append(d.error || "");
+      }
+      if (["done", "stopped", "error"].includes(d.state)) { $("stop").classList.add("hidden"); $("live-tag").classList.add("hidden"); refreshStart(); return; }
+    } catch (e) { /* server busy; try again */ }
+    timer = setTimeout(poll, 700);
+  }
+
+  // ---- working time ----
+  const STATE_COLOUR = { computer: "var(--work)", phone: "var(--phone)", present: "var(--idle)", away: "var(--muted)" };
+  function renderWork(a) {
+    const box = $("workers");
+    if (!a || !a.people.length) return;
+    const start = a.start, end = Math.max(mode === "file" && duration ? duration : a.now, start + 1);
+    box.innerHTML = "";
+    a.people.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "worker";
+      const segs = p.segments.map(([s0, s1, st]) =>
+        `<span style="left:${(s0 - start) / (end - start) * 100}%;width:${Math.max(0.4, (s1 - s0) / (end - start) * 100)}%;background:${STATE_COLOUR[st]}"></span>`).join("");
+      row.innerHTML = `<div><div class="nm"></div><div class="now"><i style="background:${STATE_COLOUR[p.state]}"></i><span></span></div></div>
+        <div class="bar" role="img">${segs}</div>
+        <div class="totals"><span>Computer <b>${p.text.computer}</b></span><span>Phone <b>${p.text.phone}</b></span><span>Not at computer <b>${p.text.present}</b></span><span>Breaks <b>${p.breaks.length}</b> · <b>${p.text.break}</b></span></div>
+        ${p.breaks.length ? `<div class="breaks"></div>` : ""}
+        ${p.moods && p.moods.length ? `<div class="mood">Mood: ${p.moods.map(([m, pc]) => `${m} ${pc}%`).join(" · ")}</div>` : ""}`;
+      row.querySelector(".nm").textContent = p.name;
+      row.querySelector(".now span").textContent = p.state === "away" && mode === "file"
+        ? `Out of view since ${p.since}` : p.state_text + (p.since ? ` since ${p.since}` : "");
+      row.querySelector(".bar").setAttribute("aria-label", `${p.name}: computer ${p.text.computer}, phone ${p.text.phone}, breaks ${p.breaks.length}`);
+      if (p.breaks.length) row.querySelector(".breaks").textContent = "Breaks: " + p.breaks.map((b) => `${b.from}–${b.to || "now"}`).join(", ");
+      box.appendChild(row);
+    });
+  }
+
+  // ---- visitors and money ----
+  const SENT = { positive: ["Positive", "var(--green)"], neutral: ["Calm", "var(--idle)"], negative: ["Negative", "var(--red)"] };
+  function renderFacts(dm) {
+    if (!dm || !dm.people) return;
+    const max = Math.max(1, ...dm.ages.map(([, n]) => n));
+    $("ages").innerHTML = dm.ages.length ? dm.ages.map(([g, n]) =>
+      `<div class="agebar"><span>${g.replace("-", "–")}</span><span class="b" style="width:${n / max * 100}%"></span><span class="n">${n}</span></div>`).join("")
+      : '<div class="muted-note">No face was large enough to estimate an age yet.</div>';
+    const total = Object.values(dm.sentiment).reduce((a, b) => a + b, 0);
+    if (!total) return;
+    $("sentiment").innerHTML = `<div class="split">${["positive", "neutral", "negative"].map((k) =>
+      dm.sentiment[k] ? `<span style="width:${dm.sentiment[k] / total * 100}%;background:${SENT[k][1]}"></span>` : "").join("")}</div>
+      <div class="split-key">${["positive", "neutral", "negative"].map((k) =>
+      `<span><i style="background:${SENT[k][1]}"></i>${SENT[k][0]} ${Math.round((dm.sentiment[k] || 0) / total * 100)}%</span>`).join("")}</div>`;
+  }
+  const PLATE_LIST_TEXT = { green: "allowed", red: "watch list", black: "banned", unknown: "not on a list" };
+  const vehicleAlerted = new Set();
+  function plateBadge(plate, big) {
+    const k = plate.split(" ");
+    const digits = k.pop(), letters = k.join(" ");
+    const el = document.createElement("span");
+    el.className = "plate" + (big ? " big" : "");
+    el.setAttribute("aria-label", `Plate ${plate}`);
+    el.innerHTML = '<span class="band"><span>EGYPT</span><span>مصر</span></span><span class="chars"><span class="d"></span><span class="l"></span></span>';
+    el.querySelector(".d").textContent = digits; el.querySelector(".l").textContent = letters;
+    return el;
+  }
+  function renderVehicles(list) {
+    if (!list || !list.length) return;
+    const ul = $("vlog");
+    ul.innerHTML = "";
+    list.slice().reverse().forEach((v) => {
+      const li = document.createElement("li");
+      li.dataset.track = v.track;
+      li.innerHTML = `${v.photo ? '<img alt="">' : '<span class="noimg"></span>'}<div><div class="who"></div><div class="when"></div></div><span></span>`;
+      if (v.photo) li.querySelector("img").src = v.photo;
+      li.querySelector(".who").textContent = (v.colour ? v.colour + " " : "") + v.type + (v.owner ? ` · ${v.owner}` : "");
+      li.querySelector(".when").textContent = (mode === "file" ? "at " : "") + v.time;
+      if (v.plate) {
+        const p = document.createElement("div"); p.className = "vplate"; p.appendChild(plateBadge(v.plate));
+        li.querySelector("div").appendChild(p);
+        const chip = li.lastElementChild;
+        chip.className = `chip ${v.list}`; chip.textContent = PLATE_LIST_TEXT[v.list];
+        if (v.list === "unknown") {
+          const b = document.createElement("button"); b.type = "button"; b.className = "add"; b.textContent = "Add to a list";
+          b.onclick = () => { showTab("cars"); const f = $("plate-form"); f.plate.value = v.plate; f.owner.focus(); };
+          li.querySelector("div").appendChild(b);
+        }
+        if (v.ack) { const a = document.createElement("div"); a.className = "acked"; a.textContent = `Acknowledged ${v.ack}`; li.querySelector("div").appendChild(a); }
+        if (v.alert && !vehicleAlerted.has(v.track)) {
+          vehicleAlerted.add(v.track);
+          raiseAlert({ what: "car", track: v.track, name: v.owner ? `${v.owner} · ${v.latin}` : v.latin, plate: v.plate, owner: v.owner,
+                       spoken: `plate ${v.latin}`,
+                       list: v.list, time: v.time, photo: v.photo, alert: true });
+        }
+      } else if (plateInfo.enabled === false) {
+        li.lastElementChild.remove();
+      }
+      ul.appendChild(li);
+    });
+    $("veh-count").textContent = list.length;
+  }
+
+  // ---- car lists ----
+  const plateInfo = {};
+  function showTab(tab) {
+    document.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.tab === tab));
+    $("people-tab").classList.toggle("hidden", tab !== "people");
+    $("cars").classList.toggle("hidden", tab !== "cars");
+  }
+  document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  async function loadPlates(body) {
+    const r = await fetch("/cctv/plates", body ? { method: "POST", body } : {});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Could not save");
+    plateInfo.enabled = d.enabled;
+    const ul = $("plates");
+    ul.innerHTML = d.plates.length ? "" : '<li class="note">No cars yet. Type a plate above, or press “Add to a list” on a car the camera read.</li>';
+    d.plates.forEach((p) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<div></div><span style="display:flex;gap:6px;align-items:center"><select aria-label="List"><option value="green">Green</option><option value="red">Red</option><option value="black">Black</option></select><button type="button" class="x" aria-label="Remove">×</button></span>`;
+      li.firstElementChild.appendChild(plateBadge(p.plate));
+      if (p.owner) { const o = document.createElement("span"); o.className = "owner"; o.textContent = p.owner; li.firstElementChild.appendChild(o); }
+      const sel = li.querySelector("select"); sel.value = p.list;
+      sel.onchange = () => { const f = new FormData(); f.append("plate", p.plate); f.append("list", sel.value); f.append("owner", p.owner || ""); loadPlates(f); };
+      li.querySelector(".x").onclick = () => { const f = new FormData(); f.append("plate", p.plate); f.append("remove", "1"); loadPlates(f); };
+      ul.appendChild(li);
+    });
+  }
+  $("plate-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    try { await loadPlates(new FormData(f)); f.reset(); f.querySelector(".msg").textContent = ""; }
+    catch (err) { f.querySelector(".msg").textContent = err.message; }
+  });
+  loadPlates().catch(() => {});
+
+  let cashShown = 0;
+  function renderMoney(m) {
+    if (!m || !m.enabled) return;
+    $("cash-now").textContent = m.now; $("cash-max").textContent = m.max;
+    m.events.slice(cashShown).forEach((e) => {
+      const li = document.createElement("li");
+      li.innerHTML = "<b></b><span></span>";
+      li.children[0].textContent = `${e.total} EGP at ${e.time}`;
+      li.children[1].textContent = e.notes;
+      $("cash-log").prepend(li);
+    });
+    cashShown = m.events.length;
+  }
+
+  const LIST_TEXT = { green: "allowed", red: "watch list", black: "banned", unknown: "unknown" };
+  function addEvent(e) {
+    const log = $("log");
+    log.querySelector(".empty-row")?.remove();
+    const li = document.createElement("li");
+    li.dataset.track = e.track;
+    li.innerHTML = `${e.photo ? `<img alt="">` : `<span class="noimg"></span>`}
+      <div><div class="who"></div><div class="when"></div></div>
+      <span class="chip ${e.list}">${LIST_TEXT[e.list]}</span>`;
+    if (e.photo) li.querySelector("img").src = e.photo;
+    li.querySelector(".who").textContent = e.name;
+    li.querySelector(".when").textContent = (mode === "file" ? "at " : "") + e.time
+      + (e.age ? ` · about ${e.age.replace("-", "–")}` : "") + (e.mood ? ` · ${e.mood}` : "");
+    if (e.list === "unknown" && e.can_add) addButton(li, e);
+    log.prepend(li);
+    $("seen-count").textContent = `${seen + 1} ${seen + 1 === 1 ? "person" : "people"}`;
+    if (mode === "file" && duration) {
+      const t = document.createElement("div");
+      t.className = "tick"; t.dataset.track = e.track; t.style.left = `${Math.min(100, e.seconds / duration * 100)}%`;
+      t.style.background = `var(--${e.list})`; t.title = `${e.name} · ${e.time}`;
+      if (e.list === "black") t.style.boxShadow = "0 0 0 2px var(--asphalt), 0 0 0 3px var(--muted)";
+      $("timeline").appendChild(t);
+    }
+    if (e.alert) raiseAlert(e);
+  }
+
+  // ---- name an unknown person ----
+  function addButton(li, e) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "add"; b.textContent = "Add to a list";
+    li.querySelector("div").appendChild(b);
+    b.addEventListener("click", () => {
+      if (li.querySelector(".add-form")) return;
+      const f = document.createElement("form");
+      f.className = "add-form";
+      f.innerHTML = `<input name="name" placeholder="Name" list="known-names" required aria-label="Name">
+        <select name="list" aria-label="List"><option value="green">Green</option><option value="red">Red</option><option value="black">Black</option></select>
+        <button type="submit">Save</button><span class="msg" role="status"></span>`;
+      li.appendChild(f);
+      f.querySelector("input").focus();
+      f.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const body = new FormData(f);
+        f.querySelector("button").disabled = true;
+        try {
+          const r = await fetch(`/cctv/add/${job}/${e.track}`, { method: "POST", body });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || "Could not save");
+          e.name = d.name; e.list = d.list;
+          li.querySelector(".who").textContent = d.name;
+          const chip = li.querySelector(".chip");
+          chip.className = `chip ${d.list}`; chip.textContent = LIST_TEXT[d.list];
+          li.querySelector(".when").textContent += ` · saved ${d.photos} photo${d.photos === 1 ? "" : "s"}`;
+          f.remove(); b.remove();
+          const tick = [...$("timeline").querySelectorAll(".tick")].find((t) => t.dataset.track == e.track);
+          if (tick) tick.style.background = `var(--${d.list})`;
+          loadPeople();
+          if (d.list !== "green") raiseAlert({ ...e, name: d.name, list: d.list, alert: true });
+        } catch (err) {
+          f.querySelector(".msg").textContent = err.message;
+          f.querySelector("button").disabled = false;
+        }
+      });
+    });
+  }
+
+  // ---- alerts ----
+  // red list: banner + one chime + spoken once.
+  // black list: full-screen alarm, siren and spoken warning repeated until acknowledged.
+  const alarms = [];
+  let sirenTimer = null, speakTimer = null, titleTimer = null;
+  const baseTitle = document.title;
+
+  function raiseAlert(e) {
+    if (e.list === "black") return raiseAlarm(e);
+    const a = $("alert");
+    a.className = "alert enter";
+    a.innerHTML = `${e.photo ? '<img alt="">' : ""}<span></span><button type="button">Dismiss</button>`;
+    if (e.photo) a.querySelector("img").src = e.photo;
+    const what = e.what || "person";
+    a.querySelector("span").textContent = `Watch-list ${what}: ${e.name} ${mode === "file" ? "at " : ""}${e.time}`;
+    a.querySelector("button").onclick = () => { a.classList.add("hidden"); acknowledge(e); };
+    beep(2);
+    say(`Attention. Watch-list ${what} ${e.spoken || e.name} detected.`);
+    notify(`Watch-list ${what}: ${e.name}`, e);
+  }
+
+  function raiseAlarm(e) {
+    if (alarms.some((x) => x.track === e.track)) return;
+    alarms.push(e);
+    showAlarm();
+    notify(`BLACK-LISTED ${e.what || "person"}: ${e.name}`, e, true);
+  }
+
+  function showAlarm() {
+    const e = alarms[0];
+    if (!e) return stopAlarm();
+    $("alarm-photo").src = e.photo || "";
+    $("alarm-photo").classList.toggle("hidden", !e.photo);
+    $("alarm-name").textContent = e.plate ? (e.owner || "Car") : e.name;
+    $("alarm-plate").innerHTML = "";
+    if (e.plate) $("alarm-plate").appendChild(plateBadge(e.plate, true));
+    $("alarm-kind").textContent = `Black-listed ${e.what || "person"} detected`;
+    $("alarm-where").textContent = `${$("file-name").textContent && mode === "file" ? "In the recording at " : "Seen at "}${e.time}${currentTitle ? " · " + currentTitle : ""}`;
+    $("alarm-more").textContent = alarms.length > 1 ? `${alarms.length - 1} more alarm${alarms.length > 2 ? "s" : ""} waiting` : "";
+    $("alarm").classList.remove("hidden");
+    $("alarm-form").querySelector("button").focus();
+    startSiren();
+    const sentence = `Warning. Black-listed ${e.what || "person"} ${e.spoken || e.name} detected.`;
+    say(sentence);
+    clearInterval(speakTimer);
+    speakTimer = setInterval(() => say(sentence), 10000);
+    clearInterval(titleTimer);
+    titleTimer = setInterval(() => { document.title = document.title === baseTitle ? `⚠ ${e.name} — BLACK LIST` : baseTitle; }, 800);
+  }
+
+  $("alarm-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const e = alarms.shift();
+    if (e) acknowledge(e, $("alarm-by").value.trim());
+    if (alarms.length) showAlarm(); else stopAlarm();
+  });
+
+  function stopAlarm() {
+    $("alarm").classList.add("hidden");
+    clearInterval(sirenTimer); clearInterval(speakTimer); clearInterval(titleTimer);
+    sirenTimer = speakTimer = titleTimer = null;
+    document.title = baseTitle;
+    try { speechSynthesis.cancel(); } catch (err) {}
+  }
+
+  async function acknowledge(e, by = "") {
+    try {
+      const body = new FormData(); body.append("by", by);
+      const r = await fetch(`/cctv/ack/${job}/${e.track}`, { method: "POST", body });
+      const d = await r.json();
+      const row = document.querySelector(`.log li[data-track="${e.track}"] .when`);
+      if (row && d.ack) {
+        const s = document.createElement("div"); s.className = "acked";
+        s.textContent = `Acknowledged ${d.ack}${by ? " by " + by : ""}`;
+        row.after(s);
+      }
+    } catch (err) {}
+  }
+
+  function audio() {
+    beepCtx = beepCtx || new AudioContext();
+    if (beepCtx.state === "suspended") beepCtx.resume();
+    return beepCtx;
+  }
+  function tone(freq, at, len, vol = 0.22, type = "sine") {
+    const ctx = audio(), o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+    g.gain.setValueAtTime(vol, at + len - 0.04); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+    o.connect(g).connect(ctx.destination); o.start(at); o.stop(at + len + 0.02);
+  }
+  function startSiren() {
+    if (sirenTimer) return;
+    const cycle = () => { try { const t = audio().currentTime; tone(960, t, 0.42, 0.25, "square"); tone(640, t + 0.45, 0.42, 0.25, "square"); } catch (err) {} };
+    cycle(); sirenTimer = setInterval(cycle, 900);
+  }
+  function beep(times) {
+    try { const t = audio().currentTime; for (let i = 0; i < times; i++) tone(880, t + i * 0.28, 0.2); } catch (e) {}
+  }
+  function say(text) {
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-US"; u.rate = 0.95; u.volume = 1;
+      setTimeout(() => speechSynthesis.speak(u), 150);
+    } catch (err) {}
+  }
+  function notify(title, e, sticky = false) {
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted" || !document.hidden) return;
+      const n = new Notification(title, { body: `${e.time}${currentTitle ? " · " + currentTitle : ""}`, icon: e.photo || undefined, requireInteraction: sticky, tag: `cctv-${e.track}` });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch (err) {}
+  }
+
+  // ---- lists ----
+  async function loadPeople(body) {
+    const r = await fetch("/cctv/lists", body ? { method: "POST", body } : {});
+    const d = await r.json();
+    const ul = $("people");
+    ul.innerHTML = "";
+    $("known-names").innerHTML = "";
+    (d.people || []).forEach((p) => { const o = document.createElement("option"); o.value = p.name; $("known-names").appendChild(o); });
+    if (!d.people || !d.people.length) { ul.innerHTML = '<li class="note">No one added yet. Add someone with photos above, or press “Add to a list” on an unknown person in the video.</li>'; return; }
+    d.people.forEach((p) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span></span><span style="display:flex;gap:6px;align-items:center"><select aria-label="List"><option value="green">Green · allowed</option><option value="red">Red · watch</option><option value="black">Black · banned</option></select><button type="button" class="x" aria-label="Remove">×</button></span>`;
+      li.querySelector("span").textContent = p.name;
+      li.querySelector(".x").onclick = async () => {
+        if (!confirmRemove(p.name)) return;
+        const f = new FormData(); f.append("name", p.name);
+        await fetch("/people/forget", { method: "POST", body: f }); loadPeople();
+      };
+      const s = li.querySelector("select");
+      s.value = p.list; s.setAttribute("aria-label", `List for ${p.name}`);
+      s.addEventListener("change", () => { const f = new FormData(); f.append("name", p.name); f.append("list", s.value); loadPeople(f); });
+      ul.appendChild(li);
+    });
+  }
+  // removing a person deletes their saved face photos, so ask with an in-page confirm (no browser dialog)
+  let pendingRemove = null;
+  function confirmRemove(name) {
+    if (pendingRemove === name) { pendingRemove = null; return true; }
+    pendingRemove = name;
+    const note = $("person-form").querySelector(".msg");
+    note.textContent = `Press × again to remove ${name} and delete their face photos.`;
+    setTimeout(() => { if (pendingRemove === name) { pendingRemove = null; note.textContent = ""; } }, 5000);
+    return false;
+  }
+  $("photos").addEventListener("change", () => {
+    const n = $("photos").files.length;
+    $("photo-name").textContent = n ? `${n} photo${n > 1 ? "s" : ""} chosen` : "Choose 1–5 clear photos of the face";
+    $("photo-label").classList.toggle("has-file", n > 0);
+  });
+  $("person-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = ev.target, msg = f.querySelector(".msg"), btn = f.querySelector("button");
+    btn.disabled = true; msg.style.color = "var(--muted)"; msg.textContent = "Saving…";
+    try {
+      const r = await fetch("/people/add", { method: "POST", body: new FormData(f) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not add");
+      msg.style.color = "var(--green)"; msg.textContent = d.message;
+      f.reset(); $("photo-name").textContent = "Choose 1–5 clear photos of the face"; $("photo-label").classList.remove("has-file");
+      loadPeople();
+    } catch (err) { msg.style.color = "var(--red)"; msg.textContent = err.message; }
+    btn.disabled = false;
+  });
+  loadPeople();
+})();
+</script>
+{% endblock %}

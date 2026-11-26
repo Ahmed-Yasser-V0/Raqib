@@ -1,0 +1,21 @@
+# Private: enrolled faces, people / car lists, recordings, plate photos, logs never leave this computer
+faces/
+uploads/
+training/plates_new/
+run_log*.txt
+setup_log.txt
+cctv_log_*.csv
+working_time_*.csv
+
+# Local environment and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Training work folders
+training/datasets/
+training/runs/
+training/plate_chars_work/
+training/training_log.txt
+runs/
