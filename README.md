@@ -1,7 +1,7 @@
 # Raqib (رقيب)
 
 *Raqib* means "watcher" in Arabic. It is CCTV analytics for companies: who came in, when, and whether they are allowed.
-**Private.** It started from the face recognition of the Ru'ya smart-glasses graduation project.
+It grew out of the face recognition in [Ru'ya](https://github.com/Ahmed-Yasser-V0/Ruya), a smart-glasses graduation project for blind and visually impaired people.
 
 ## What it does
 - **People**: face recognition with **green / red / black** lists, a full-screen alarm for black-listed people, a Seen log with time, age group and mood.
@@ -35,6 +35,11 @@ Raqib listens on this computer only (`127.0.0.1`). To open it from another PC, s
 
 ## Tests
 `.venv\Scripts\python.exe -m pytest tests`
+
+## Credits
+- Plate data: **EALPR** (Youssef et al., *Real-time Egyptian License Plate Detection and Recognition using YOLO*, IJACSA 2022), CC BY 4.0.
+- Sample videos: Intel IoT DevKit sample videos (CC BY 4.0).
+- Fonts: Atkinson Hyperlegible (Braille Institute) and IBM Plex Sans Arabic, SIL Open Font Licence.
 
 ## History
 ### First version: CCTV console
